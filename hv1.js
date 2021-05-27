@@ -30,13 +30,13 @@ function pollCT50() { //request thermostat status (tstat)
 	got.get(CT50IP+'/tstat', {responseType: 'json'})
 	.then(tstat => {
 //		console.log('Status Code:', tstat.statusCode);
-		const clk= new Date();
-		const timeStamp= lib.timeCode(clk);
-		if (lastHour != clk.getHours()) { //report each hour
-			if (lastHour > clk.getHours()) //report each day
-				logFile.write(`${timeStamp}=${clk.toISOString('en-US')}\n`); //ISO date stamp 2020-10-09T14:48:00.000Z
+		const now= new Date();
+		const timeStamp= lib.timeCode(now);
+		if (lastHour != now.getHours()) { //report each hour
+			if (lastHour > now.getHours()) //report each day
+				logFile.write(`${timeStamp}=${now.toISOString('en-US')}\n`); //ISO date stamp 2020-10-09T14:48:00.000Z
 			logFile.write(`${timeStamp}:tstat ${JSON.stringify(tstat.body)}\n`);
-			lastHour= clk.getHours();
+			lastHour= now.getHours();
 		}
 		if (lastTemp != tstat.body.temp) {//temperature (degrees Fahrenheit)
 			publish(timeStamp, 'hv1/tell/mfld/CT50/temp', tstat.body.temp);
@@ -70,8 +70,7 @@ async function sysCT50() { //request thermostat system information (sys)
 		const model= await got.get(CT50IP+'/tstat/model', {responseType: 'text'});
 		const sysName= await got.get(CT50IP+'/sys/name', {responseType: 'text'});
 
-		const clk= new Date();
-		const timeStamp= lib.timeCode(clk);
+		const timeStamp= lib.timeCode(new Date());
 		const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.substr(1);
 		logFile.write(`${timeStamp}:sys ${response}\n`);
 		publish(timeStamp, 'hv1/told/mfld/CT50/sys', response, 1, false);
@@ -83,8 +82,7 @@ async function sysCT50() { //request thermostat system information (sys)
 function netCT50() { //request thermostat network information (net)
 	got.get(CT50IP+'/sys/network', {responseType: 'text'})
 	.then(net => {
-		const clk= new Date();
-		const timeStamp= timeCode(clk);
+		const timeStamp= timeCode(new Date());
 		logFile.write(`${timeStamp}:net ${net.body}\n`);
 		publish(timeStamp, 'hv1/told/mfld/CT50/net', net.body, 1, false);
 	})
