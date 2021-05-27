@@ -25,16 +25,18 @@ ada/tell/mld/gar/sidor
 
 ### ClientID
 
-topic | $name
-ada | Adatek I/O interface (1 second)
-isp | ISP Speed Test (15 minute)
-hv1 | CT50 Thermostat (1 minute)
-log | record all mqtt messages
-mon | Monitor all mqtt messages
+| topic | $name
+| --- | ---
+| ada | Adatek I/O interface (1 second)
+| isp | ISP Speed Test (15 minute)
+| hv1 | CT50 Thermostat (1 minute)
+| log | record all mqtt messages
+| mon | Monitor all mqtt messages
 
 ### Function
 
 topic | action | retained | example
+| --- | --- | --- | ---
 tell | published based on time or event | yes | temperature sensor
 told | published info from get request | no | discovery information
 conn | published client connected status | yes | gateway, device
@@ -48,12 +50,14 @@ all | broadcast | yes | alert
 A geographic location that can be associated with a latitude and a longitude ($geo).
 
 topic | $name | $geo
+| --- | --- | ---
 mfld | mFeld | 34.86410,-82.30804
 wcrk | wCrek | 34.75046,-83.02010
 
 ### Sublocation (room)
 
 topic | $name | topic | $name | topic | $name
+| --- | --- | --- | --- | --- | ---
 kit | kitchen | mst | master bedroom | ofc | office
 gar | garage | bmm | Brandon bedroom | fam | family room
 ext | exterior | rec | Recreation room | foy | foyer
@@ -63,6 +67,7 @@ elm | Erika bedroom | liv | living room
 ### $state
 
 alert | \-5 | connected, but something is wrong, needs human intervention
+| --- | --- | ---
 lost | \-4 | unexpected disconnect (set by last will & testament)
 disconnected | \-3 | published prior to clean disconnect
 init | \-2 | connected to MQTT but not published all messages
@@ -72,9 +77,6 @@ ready | 0 | connected, finished setup
 Payload JSON properties
 
 label | descriptor | units
+| --- | --- | ---
 ts | time\_stamp | seconds since 1/1/2020
-tc | last\_change
-
-seconds since 1/1/2020
-
-wn Demo
+tc | last\_change | seconds since 1/1/2020
