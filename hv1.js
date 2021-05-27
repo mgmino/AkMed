@@ -64,22 +64,20 @@ function pollCT50() { //request thermostat status (tstat)
 	});	
 }
 
-function sysCT50() { //request thermostat system information (sys)
-	Promise.all([
-		got.get(CT50IP+'/sys', {responseType: 'text'}),
-		got.get(CT50IP+'/tstat/model', {responseType: 'text'}),
-		got.get(CT50IP+'/sys/name', {responseType: 'text'}),
-	])
-		.then(([sys, model, sysName]) => {
-			const clk= new Date();
-			const timeStamp= timeCode(clk);
-			const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.substr(1);
-			logFile.write(`${timeStamp}:sys ${response}\n`);
-			publish(timeStamp, 'hv1/told/mfld/CT50/sys', response, 1, false);
-		})
-		.catch(err => {
-			console.log('Got sys Error: ', err.message);
-		});
+async function sysCT50() { //request thermostat system information (sys)
+	try {
+		const sys= await got.get(CT50IP+'/sys', {responseType: 'text'});
+		const model= await got.get(CT50IP+'/tstat/model', {responseType: 'text'});
+		const sysName= await got.get(CT50IP+'/sys/name', {responseType: 'text'});
+
+		const clk= new Date();
+		const timeStamp= lib.timeCode(clk);
+		const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.substr(1);
+		logFile.write(`${timeStamp}:sys ${response}\n`);
+		publish(timeStamp, 'hv1/told/mfld/CT50/sys', response, 1, false);
+	} catch (err) {
+		console.log('Got sys Error: ', err.message);
+	}
 }
 
 function netCT50() { //request thermostat network information (net)
