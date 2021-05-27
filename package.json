@@ -1,0 +1,27 @@
+{
+  "name": "akmed",
+  "version": "1.0.0",
+  "description": "AkMed mqtt clients",
+  "main": "mqtt-log.js",
+  "dependencies": {
+    "fs": "0.0.1-security",
+    "got": "^11.8.2",
+    "mqtt": "^4.2.6"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "mqtt-mon.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "mgmino"
+  },
+  "keywords": [
+    "home",
+    "automation",
+    "domotics",
+    "mqtt"
+  ],
+  "author": "Michael Mino",
+  "license": "ISC"
+}
