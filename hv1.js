@@ -6,7 +6,8 @@ const fileHandle = require('fs');
 const mqtt = require('mqtt'); //https://www.npmjs.com/package/mqtt#store
 const lib = require('./mqtt-client-lib');
 
-const CT50IP = 'http://192.168.1.117';
+const CT50IP = 'http://192.168.1.192';
+//const CT50IP = 'http://192.168.1.117';
 const MINUTE = 60 * 1000; //60 * 1000ms
 const logFile = fileHandle.createWriteStream('/var/akmed/logs/l0g-hv1.txt', { flags: 'a' });
 let lastHour= 99;
@@ -22,10 +23,11 @@ let lastHour= 99;
 //cloud: {"interval":300,"url":"http://my.radiothermostat.com/rtcoa/rest/rtcoa","status":1,"enabled":1,"authkey":"8d9979d8","status_code":200}
 //https://github.com/brannondorsey/radio-thermostat
 
-let lastTemp = lastTmode= lastFmode= lastOverride= lastHold= 99;
-const Tmode= ['off', 'heat', 'cool', 'auto'];
-const Fmode= ['auto', 'circ', 'on'];
+let lastTemp = lastTmode= lastFmode= lastOverride= lastHold= lastTstat= lastFstat= lastTcool= lastTheat= 99;
+const Tmode= ['off', 'heat', 'cool', 'auto']; //HVAC mode
+const Fmode= ['auto', 'circ', 'on']; //fan mode
 const Xmode= ['disabled', 'enabled']; //override and hold
+const Smode= ['off', 'on']; //fan status
 function pollCT50() { //request thermostat status (tstat)
 	got.get(CT50IP+'/tstat', {responseType: 'json'})
 	.then(tstat => {
@@ -39,10 +41,10 @@ function pollCT50() { //request thermostat status (tstat)
 			lastHour= now.getHours();
 		}
 		if (lastTemp != tstat.body.temp) {//temperature (degrees Fahrenheit)
-			publish(timeStamp, 'hv1/tell/mfld/CT50/temp', tstat.body.temp);
+			publish(timeStamp, 'hv1/tell/mfld/CT50/temp', tstat.body.temp +' F');
 			lastTemp= tstat.body.temp;
 		}
-		if (lastTmode != tstat.body.tmode) {//thermostat mode
+		if (lastTmode != tstat.body.tmode) {//HVAC mode
 			publish(timeStamp, 'hv1/tell/mfld/CT50/tmode', Tmode[tstat.body.tmode]);
 			lastTmode= tstat.body.tmode;
 		}
@@ -57,6 +59,24 @@ function pollCT50() { //request thermostat status (tstat)
 		if (lastHold != tstat.body.hold) {//hold
 			publish(timeStamp, 'hv1/tell/mfld/CT50/hold', Xmode[tstat.body.hold]);
 			lastHold= tstat.body.hold;
+		}
+		if (lastTstat != tstat.body.tstate) {//HVAC Operating State
+			publish(timeStamp, 'hv1/tell/mfld/CT50/mode', Tmode[tstat.body.tstate]);
+			lastTstat= tstat.body.tstate;
+		}
+		if (lastFstat != tstat.body.fstate) {//Fan Operating State
+			publish(timeStamp, 'hv1/tell/mfld/CT50/fan', Smode[tstat.body.fstate]);
+			lastFstat= tstat.body.fstate;
+		}
+		if (lastTcool != tstat.body.t_cool) {//target Cool setpoint (degrees Fahrenheit)
+			if (tstat.body.t_cool !== undefined)
+				publish(timeStamp, 'hv1/tell/mfld/CT50/cool', tstat.body.t_cool+' F');
+			lastTcool= tstat.body.t_cool; 
+		}
+		if (lastTheat != tstat.body.t_heat ) {//target Heat setpoint (degrees Fahrenheit)
+			if (tstat.body.t_heat !== undefined)
+				publish(timeStamp, 'hv1/tell/mfld/CT50/heat', tstat.body.t_heat+' F');
+			lastTheat= tstat.body.t_heat; 
 		}
 	})
 	.catch(err => {
@@ -79,10 +99,44 @@ async function sysCT50() { //request thermostat system information (sys)
 	}
 }
 
+function setCT50(prop, val) { //request to change property (set)
+	console.log(prop, val);
+	if (prop == 'fmode') { //fan mode
+		const fmodeVal= Fmode.indexOf(val);
+		if (fmodeVal > -1 && fmodeVal < 3)
+			postCT50('tstat', `{ "fmode":${fmodeVal} }`);
+		else
+			publish(lib.timeCode(), 'hv1/sat/mfld/CT50', `ERR: setCT50 ${prop} ${val}`,1,false);
+	} else if (prop == 'tmode') { //HVAC mode
+		const tmodeVal= Tmode.indexOf(val);
+		if (tmodeVal > -1 && tmodeVal < 4)
+			postCT50('tstat', `{ "tmode":${tmodeVal} }`);
+		else
+			publish(lib.timeCode(), 'hv1/sat/mfld/CT50', `ERR: setCT50 ${prop} ${val}`,1,false);
+	} else if (prop == 'cool') { //target Cool setpoint (degrees Fahrenheit)
+		postCT50('tstat', `{ "t_cool":${val} }`)
+	} else if (prop == 'heat') { //target Heat setpoint (degrees Fahrenheit)
+		postCT50('tstat', `{ "t_heat":${val} }`)
+	} else
+		publish(lib.timeCode(), 'hv1/sat/mfld/CT50', `Unknown: ${prop}~${val}`,1,false);
+}
+
+async function postCT50(url, data) {
+	console.log('post',url, data);
+	const response= await got(url, {
+		prefixUrl: CT50IP,
+		body: data,
+		method: 'post',
+		timeout: 300 //ms
+	})
+	publish(lib.timeCode(), 'hv1/sat/mfld/CT50', `Status: ${response.statusCode} ${data}`,1,false);
+	pollCT50(); //read changed value(s)
+}
+
 function netCT50() { //request thermostat network information (net)
 	got.get(CT50IP+'/sys/network', {responseType: 'text'})
 	.then(net => {
-		const timeStamp= timeCode(new Date());
+		const timeStamp= lib.timeCode(new Date());
 		logFile.write(`${timeStamp}:net ${net.body}\n`);
 		publish(timeStamp, 'hv1/told/mfld/CT50/net', net.body, 1, false);
 	})
@@ -115,12 +169,15 @@ client.on('error', err => {
 });
 
 client.subscribe('hv1/get/#',{qos:1});
+client.subscribe('hv1/set/#',{qos:1});
 
-client.on('message',(topic, message, packet) => {
+client.on('message',(topic, payload) => {
+	console.log(topic, payload.toString());
 	if (topic == 'hv1/get/dev') publish(lib.timeCode(), 'hv1/told/dev', 'mfld/CT50',1,false);
 	else if (topic == 'hv1/get/loc') publish(lib.timeCode(), 'hv1/told/loc', '192.168.1.13',1,false);
 	else if (topic == 'hv1/get/mfld/CT50/var') publish(lib.timeCode(), 'hv1/told/mfld/CT50/var', 'temp,tmode,fmode,override,hold;sys,net',1,false);
 	else if (topic == 'hv1/get/mfld/CT50/sys') sysCT50();
 	else if (topic == 'hv1/get/mfld/CT50/net') netCT50();
-	else logFile.write(`Unknown message: ${topic} ${msg} ${packet}\n`);
+	else if (topic.substr(0, 18) == 'hv1/set/mfld/CT50/') setCT50(topic.substr(18), payload.toString());
+	else logFile.write(`Unknown hv1 message: ${topic} ${payload}\n`);
 });
