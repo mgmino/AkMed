@@ -1,0 +1,7 @@
+{
+    "mqttUrl":"mqtt://localhost",
+    "CT50Url":"http://192.168.1.192",
+    "logFile":"/var/akmed/logs/l0g-hv2.txt",
+    "clientID":"hv2",
+    "loc":"wcr"
+}
