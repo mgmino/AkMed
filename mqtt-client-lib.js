@@ -1,5 +1,15 @@
 //function library for AkMed mqtt clients
 //
+const fileHandle = require('fs');
+
+class Logger {  // append message to logfile
+	constructor(filename) {
+		this.logFile = fileHandle.createWriteStream(filename, { flags: 'a' });
+	}
+	write(msg) {
+		this.logFile.write(msg);
+	}
+};
 
 function timeCode(clk= new Date()) { // convert to base64 time stamp
 	return String.fromCharCode(toBase64(clk.getHours()), toBase64(clk.getMinutes()), toBase64(clk.getSeconds()));
@@ -13,4 +23,4 @@ function toBase64(num) { // convert to base64
 	return 63; // ASCII question mark
 }
 
-module.exports = {timeCode, toBase64};
+module.exports = {timeCode, toBase64, Logger};

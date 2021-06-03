@@ -2,13 +2,12 @@
 //poll Honeywell Radio Thermostat CT50
 
 const got = require('got'); //https://www.npmjs.com/package/got
-const fileHandle = require('fs');
 const mqtt = require('mqtt'); //https://www.npmjs.com/package/mqtt#store
 const cfg = require('./config_hv1');
 const lib = require('./mqtt-client-lib');
 
 const MINUTE = 60 * 1000; //60 * 1000ms
-const logFile = fileHandle.createWriteStream(cfg.logFile, { flags: 'a' });
+const Log = new lib.Logger(cfg.logFile);
 let lastHour= 99;
 
 //poll Honeywell Radio Thermostat CT50 v1.94 Thermostat (thermostat-FF-43-09)
@@ -35,8 +34,8 @@ function pollCT50() { //request thermostat status (tstat)
 		const timeStamp= lib.timeCode(now);
 		if (lastHour != now.getHours()) { //report each hour
 			if (lastHour > now.getHours()) //report each day
-				logFile.write(`${timeStamp}=${now.toISOString('en-US')}\n`); //ISO date stamp 2020-10-09T14:48:00.000Z
-			logFile.write(`${timeStamp}:tstat ${JSON.stringify(tstat.body)}\n`);
+				Log.write(`${timeStamp}=${now.toISOString('en-US')}\n`); //ISO date stamp 2020-10-09T14:48:00.000Z
+			Log.write(`${timeStamp}:tstat ${JSON.stringify(tstat.body)}\n`);
 			lastHour= now.getHours();
 		}
 		if (lastTemp != tstat.body.temp) {//temperature (degrees Fahrenheit)
@@ -91,7 +90,7 @@ async function sysCT50() { //request thermostat system information (sys)
 
 		const timeStamp= lib.timeCode(new Date());
 		const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.substr(1);
-		logFile.write(`${timeStamp}:sys ${response}\n`);
+		Log.write(`${timeStamp}:sys ${response}\n`);
 		publish(timeStamp, `${cfg.clientID}/told/${cfg.loc}/CT50/sys`, response, 1, false);
 	} catch (err) {
 		console.log('Got sys Error: ', err.message);
@@ -136,7 +135,7 @@ function netCT50() { //request thermostat network information (net)
 	got.get(cfg.CT50Url+'/sys/network', {responseType: 'text'})
 	.then(net => {
 		const timeStamp= lib.timeCode(new Date());
-		logFile.write(`${timeStamp}:net ${net.body}\n`);
+		Log.write(`${timeStamp}:net ${net.body}\n`);
 		publish(timeStamp, `${cfg.clientID}/told/${cfg.loc}/CT50/net`, net.body, 1, false);
 	})
 	.catch(err => {
@@ -147,10 +146,10 @@ function netCT50() { //request thermostat network information (net)
 function publish(timeStamp, topic, payload, qos=1, retain=true) {
 	if (client.connected)
 		client.publish(topic, payload.toString(), {retain:retain, qos:qos}, err => {
-			if (err) logFile.write(`${timeStamp}: ${topic} ${payload} PUBLISH ERROR ${err}\n`);
+			if (err) Log.write(`${timeStamp}: ${topic} ${payload} PUBLISH ERROR ${err}\n`);
 		});
 	else
-		logFile.write(`${timeStamp}: ${topic} ${payload} DISCONNECT ERROR\n`);
+		Log.write(`${timeStamp}: ${topic} ${payload} DISCONNECT ERROR\n`);
 }
 
 // open mqtt connection
@@ -160,10 +159,10 @@ client.on('connect', () => {
 	publish(lib.timeCode(), `${cfg.clientID}/conn`, 'ready');
 	pollCT50();
 	setInterval(pollCT50, MINUTE);
-})
+});
 
 client.on('error', err => {
-	logFile.write(`mqtt connection error ${err}\n`);
+	Log.write(`mqtt connection error ${err}\n`);
 	process.exit(1);
 });
 
@@ -178,5 +177,5 @@ client.on('message',(topic, payload) => {
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/sys`) sysCT50();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/net`) netCT50();
 	else if (topic.substr(0, 18) == `${cfg.clientID}/set/${cfg.loc}/CT50/`) setCT50(topic.substr(18), payload.toString());
-	else logFile.write(`Unknown ${cfg.clientID} message: ${topic} ${payload}\n`);
+	else Log.write(`Unknown ${cfg.clientID} message: ${topic} ${payload}\n`);
 });
