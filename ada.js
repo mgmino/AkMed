@@ -3,12 +3,13 @@
 
 const SerialPort= require('serialport');	//npmjs.com/package/serialport
 const ByteLength= require('@serialport/parser-byte-length');
-const fileHandle= require('fs');
-const mqtt = require('mqtt'); //npmjs.com/package/mqtt
+const os = require('os');
+const cfg = require('./config_ada');
 const lib = require('./mqtt-client-lib');
 
+const Log = new lib.Logger(cfg.logFile); //open log file
 // create and open serial port
-const chan= new SerialPort('/dev/ttyUSB1', { baudRate: 4800, dataBits: 7, parity: odd, stopBits: 2 }, (err) => {
+const chan= new SerialPort('/dev/ttyUSB1', { baudRate: 4800, dataBits: 7, parity: 'odd', stopBits: 2 }, (err) => {
     if (err) {
       console.log('Adatek error on open: ', err.message);
 	  process.exit();
@@ -32,9 +33,8 @@ function sendSerial(chars) {
 }
 
 // Read serial data
-const logFile= fileHandle.createWriteStream(`/var/akmed/logs/ada.txt`, { flags: 'a' });
-let datum= null;
-let lastHour= [99, 99];
+let datum= null; //Adatek poll response
+let lastHour= [99, 99]; //force report
 let lastDatum= ['', ''];
 let pollCount= rspCount= 0;; //polling and response counters
 parser.on('data', char => {
@@ -44,25 +44,24 @@ parser.on('data', char => {
 	  if (char == '"') datum= null; //ignore echo of request
 	  else if (char == ']') { //end of response
 			rspCount= pollCount;
-			const clk= new Date();
+			const now= new Date();
 			const idx= datum.charAt(0) == 'L' ? 0 : 1;
-			if (lastHour[idx] != clk.getHours() || (datum != lastDatum[idx])) { //next hour or input change
-				let timeStamp= lib.timeCode(clk);
-				if (idx == 1 && (lastHour[1] > clk.getHours())) { //trigger at start of each day
-					logFile.write(`${timeStamp}=${clk.toISOString('en-US')}\n`); //ISO date stamp 2020-10-09T14:48:00.000Z
+			if (lastHour[idx] != now.getHours() || (datum != lastDatum[idx])) { //next hour or input change
+				let logEntry= lib.timeCode(now); //init log entry with time stamp
+				if (idx == 1 && (lastHour[1] > now.getHours())) { //trigger at start of each day
 					pollCount= rspCount= 0; //restart polling and response counters
 				}
-				timeStamp+= datum.charAt(0); //add Local/Remote type character
-				datum.substr(1).trim().split('  ').forEach(num => timeStamp+= '\t' +parseInt(num).toString(16));
-				if (datum != lastDatum[timeStamp, idx]) inputChange(timeStamp, idx);
-				else logFile.write(`${timeStamp}\n`);
-		  		lastHour[idx] = clk.getHours();
+				logEntry+= datum.charAt(0); //add Local/Remote type character
+				datum.substr(1).trim().split('  ').forEach(num => logEntry+= '\t' +parseInt(num).toString(16));
+				if (datum != lastDatum[idx]) inputChange(logEntry, idx);
+				else Log.write('', logEntry);
+		  		lastHour[idx] = now.getHours();
 				lastDatum[idx]= datum;
 			}
 			datum= null;
 	  } else datum+= char; //response text between [ and ]
   }
-  if (argV.echo) process.stdout.write(char);
+// process.stdout.write(char);
 });
 
 // POWR-TRAK System 73 core is National Semiconductor INS8073 running NSC Tiny Basic 
@@ -73,11 +72,11 @@ function scanAdatek() {
 		const timeStamp= lib.timeCode();
 		const missedPolls= pollCount -rspCount; //# missed poll responses
 		if (missedPolls < 5 | !(missedPolls % 25)) //log initial faults and samples
-			logFile.write(`${timeStamp}#poll(${pollCount}) <> response(${rspCount})\n`);
-		if (!pollError) publish(timeStamp, 'ada/conn', 'alert'); //only report once
+			Log.write(`#poll(${pollCount}) <> response(${rspCount})`, timeStamp);
+		if (!pollError) MQ.pub(timeStamp, 'conn', 'alert'); //only report once
 		pollError= true;
 	} else if (pollError) { //poll response after previous error
-		publish(lib.timeCode(), 'ada/conn', 'ready');
+		MQ.pub(0, 'conn', 'ready');
 		pollError= false;
 	}
 	if (pollCount++ % 2) //read Local i/o (24 points)
@@ -85,17 +84,6 @@ function scanAdatek() {
 	else //read Remote i/o (24 points)
 		sendSerial('A=#FD40:B=A+1:C=A+2:@A=0:@B=0:PRINT"<",@A,@B,@C,"]":G=C-32:@G=NOT(@GOR1)\r');
 //	@A=NOT(@AOR1)+(@AAND1) toggle output bit 0
-}
-
-function publish(timeStamp, topic, payload='', qos=1, retain=true) {
-	if (client.connected) {
-		client.publish(topic, payload, {retain:retain, qos:qos}, err => {
-			if (err) logFile.write(`${timeStamp}#${topic} ${payload} PUBLISH ERROR ${err}\n`);
-			return;
-		});
-		logFile.write(`${timeStamp}::${topic} ${payload}\n`);
-	} else
-		logFile.write(`${timeStamp}#${topic} ${payload} DISCONNECT ERROR\n`);
 }
 
 function inputChange(timeStamp, idx) {
@@ -106,39 +94,35 @@ function inputChange(timeStamp, idx) {
 		lastDatum[idx].substr(1).trim().split('  ').forEach(num => prevInputs= (prevInputs << 8) +parseInt(num));
 		change= prevInputs ^ currInputs;
 	}
+	Log.write('', timeStamp);
 	if (idx) { //Remote idx=1
-		logFile.write(`${timeStamp}\n`);
+//		code to process remote I/O
 	} else { //Local idx=0
 		if (change & (1 << 16)) //mailbox
-			publish(timeStamp, 'ada/tell/mfld/ext/mailbox', currInputs & (1 << 16) ? 'open' : 'closed');
+			MQ.pub(timeStamp, 'tell/mfd/ext/mailbox', currInputs & (1 << 16) ? 'open' : 'closed');
 		if (change & ((1 << 18) | (1 << 17))) { //garage entry door
 			const doorOpen= currInputs & (1 << 17); //garage entry door open
 			if (currInputs & (1 << 18)) //garage entry door locked
-				publish(timeStamp, 'ada/tell/mfld/gar/entryDor', doorOpen ? 'alert' : 'locked');
+				MQ.pub(timeStamp, 'tell/mfd/gar/entryDor', doorOpen ? 'alert' : 'locked');
 			else //garage entry door unlocked
-				publish(timeStamp, 'ada/tell/mfld/gar/entryDor', doorOpen ? 'open' : 'closed');
+				MQ.pub(timeStamp, 'tell/mfd/gar/entryDor', doorOpen ? 'open' : 'closed');
 		}
 	}
 }
 
 // open mqtt connection
-//const client= mqtt.connect('mqtt://localhost',{clientId:'ada',username: 'ada',password: 'pass'});
-const client= mqtt.connect('mqtt://localhost',{clientId:'ada',will:{topic: 'ada/conn',payload: 'lost', qos: 1, retain: true}});
+const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID);
 
-client.on('connect', () => {	
-	publish(lib.timeCode(), 'ada/conn', 'ready');
+MQ.client.on('connect', () => {	
+	MQ.pub(0, 'conn', 'ready');
 	setInterval(scanAdatek, 1000);
 })
 
-client.on('error', err => {
-	logFile.write(`${lib.timeCode()}# mqtt connect ${err}\n`);
-	process.exit(1);
-});
+MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
 
-client.subscribe('ada/get/#',{qos:1});
-
-client.on('message',(topic, payload, packet) => {
-	if (topic == 'ada/get/dev') publish(lib.timeCode(), 'ada/told/dev', 'mfld/gar/entryDor,mfld/ext/mailbox',1,false);
-	else if (topic == 'ada/get/loc') publish(lib.timeCode(), 'ada/told/loc', '192.168.1.13',1,false);
-	else logFile.write(`Unknown message: ${topic} ${payload}\n`);
+MQ.client.on('message',(topic, payload) => {
+	if (topic == cfg.clientID +'/get/dev') MQ.pub(0, 'told/dev', 'mfd/gar/entryDor,mfd/ext/mailbox',1,false);
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub(0, 'told/loc', os.hostname(),1,false);
+//	else if (topic == cfg.clientID +'/get/mfd/gar/entryDor/var') MQ.pub(0, 'told/${cfg.loc}/mfd/gar/entryDor/var', '??',1,false);
+	else Log.write(`# Unknown message: ${topic} ${payload}`);
 });

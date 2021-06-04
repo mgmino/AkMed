@@ -6,7 +6,9 @@
   "dependencies": {
     "fs": "0.0.1-security",
     "got": "^11.8.2",
-    "mqtt": "^4.2.6"
+    "mqtt": "^4.2.6",
+    "serialport": "^9.1.0",
+    "speedtest-net": "^2.2.0"
   },
   "devDependencies": {},
   "scripts": {

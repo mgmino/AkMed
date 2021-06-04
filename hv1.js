@@ -7,7 +7,7 @@ const cfg = require('./config_hv1');
 const lib = require('./mqtt-client-lib');
 
 const MINUTE = 60 * 1000; //60 * 1000ms
-const Log = new lib.Logger(cfg.logFile);
+const Log = new lib.Logger(cfg.logFile); //open log file
 let lastHour= 99;
 
 //poll Honeywell Radio Thermostat CT50 v1.94 Thermostat (thermostat-FF-43-09)
@@ -32,9 +32,7 @@ function pollCT50() { //request thermostat status (tstat)
 //		console.log('Status Code:', tstat.statusCode);
 		const now= new Date();
 		const timeStamp= lib.timeCode(now);
-		if (lastHour != now.getHours()) { //report each hour
-			if (lastHour > now.getHours()) //report each day
-				Log.write(`=${now.toISOString('en-US')}`, timeStamp); //ISO date stamp 2020-10-09T14:48:00.000Z
+		if (lastHour != now.getHours()) { //log tstat json each hour
 			Log.write(`:tstat ${JSON.stringify(tstat.body)}`, timeStamp);
 			lastHour= now.getHours();
 		}
@@ -142,24 +140,22 @@ function netCT50() { //request thermostat network information (net)
 	});	
 }
 
-
 // open mqtt connection
 const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID);
-const MQclient= MQ.MQclient;
 
-MQclient.on('connect', () => {	
+MQ.client.on('connect', () => {	
 	MQ.pub(0, 'conn', 'ready');
 	pollCT50();
 	setInterval(pollCT50, MINUTE);
 });
 
-MQclient.subscribe(`${cfg.clientID}/get/#`,{qos:1});
-MQclient.subscribe(`${cfg.clientID}/set/#`,{qos:1});
+MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
+MQ.client.subscribe(cfg.clientID +'/set/#',{qos:1});
 
-MQclient.on('message',(topic, payload) => {
+MQ.client.on('message',(topic, payload) => {
 //	console.log(topic, payload.toString());
-	if (topic == `${cfg.clientID}/get/dev`) MQ.pub(0, `told/dev`, `${cfg.loc}/CT50`,1,false);
-	else if (topic == `${cfg.clientID}/get/loc`) MQ.pub(0, `told/loc`, os.hostname(),1,false);
+	if (topic == cfg.clientID +'/get/dev') MQ.pub(0, 'told/dev', cfg.loc +'/CT50',1,false);
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub(0, 'told/loc', os.hostname(),1,false);
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/var`) MQ.pub(0, `told/${cfg.loc}/CT50/var`, 'temp,tmode,fmode,override,hold,tstate,fstate,t_cool,t_heat;sys,net;tmode,fmode,heat,cool',1,false);
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/sys`) sysCT50();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/net`) netCT50();

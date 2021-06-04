@@ -1,0 +1,6 @@
+{
+    "mqttUrl":"mqtt://localhost",
+    "logFile":"/var/akmed/logs/l0g-ada",
+    "clientID":"ada",
+    "loc":"mfd"
+}
