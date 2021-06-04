@@ -1,34 +1,21 @@
 //AkMed mqtt client - Monitor (mon)
-//display all mqtt message to console
+//display all mqtt messages on console
 
-const mqtt = require('mqtt'); //https://www.npmjs.com/package/mqtt#store
+const os = require('os');
+const cfg = require('./config_mon');
 const lib = require('./mqtt-client-lib');
 
-function publish(timeStamp, topic, payload, qos=1, retain=true) {
-	if (client.connected)
-		client.publish(topic, payload.toString(), {retain:retain, qos:qos}, err => {
-			if (err) console.log(`#${timeStamp}: ${topic} ${payload} PUBLISH ERROR ${err}\n`);
-		});
-		console.log(`::${topic} ${payload}`);
-	else
-		console.log(`#${timeStamp}: ${topic} ${payload} DISCONNECT ERROR\n`);
-}
-
 // open mqtt connection
-const client= mqtt.connect('mqtt://localhost',{clientId:'mon',will:{topic: 'mon/conn',payload: 'lost', qos: 1, retain: true}});
+const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID);
 
-client.on('connect', () => {	
-	publish(lib.timeCode(), 'mon/conn', 'ready');
+MQ.client.on('connect', () => {	
+	MQ.pub(0, 'conn', 'ready');
 })
 
-client.on('error', err => {
-	console.log(`mqtt connection error ${err}\n`);
-	process.exit(1);
-});
+MQ.client.subscribe('#',{qos:1});
 
-client.subscribe('#',{qos:1});
-
-client.on('message',(topic, payload, packet) => {
-	if (topic == 'mon/get/devices') publish(lib.timeCode(), 'mon/told/devices', 'none',1,false);
-	else console.log(`${topic} ${payload}`);
+MQ.client.on('message',(topic, payload) => {
+	if (topic == cfg.clientID +'/get/dev') MQ.pub(0, 'told/dev', 'none',1,false);
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub(0, 'told/loc', os.hostname(),1,false);
+	else console.log(`${lib.timeCode()}: ${topic} ${payload}`);
 });
