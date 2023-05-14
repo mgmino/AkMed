@@ -1,6 +1,10 @@
 {
     "mqttUrl":"mqtt://localhost",
     "logFile":"/var/akmed/logs/l0g-mqtt",
+	"user":"mqttuser",
+	"password":"0PABMW5mTiTr2cno",
     "clientID":"log",
-    "loc":"mfd"
+    "loc":"mfd",
+    "euser":"99wyattrentals",
+    "epwd":"Why@99cond"
 }

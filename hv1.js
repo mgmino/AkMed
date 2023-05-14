@@ -1,13 +1,14 @@
-//AkMed mqtt client - Heating/Ventilation (hv1)
+//akMed mqtt client - Heating/Ventilation (hv1)
 //poll Honeywell Radio Thermostat CT50
 
 const got = require('got'); //https://www.npmjs.com/package/got
-const os = require('os');
+const os = require('node:os');
 const cfg = require('./config_hv1');
 const lib = require('./mqtt-client-lib');
 
 const MINUTE = 60 * 1000; //60 * 1000ms
 const Log = new lib.Logger(cfg.logFile); //open log file
+const startTime= Date.now(); //ms since 1970-01-01
 let lastHour= 99;
 
 //poll Honeywell Radio Thermostat CT50 v1.94 Thermostat (thermostat-FF-43-09)
@@ -31,47 +32,46 @@ function pollCT50() { //request thermostat status (tstat)
 	.then(tstat => {
 //		console.log('Status Code:', tstat.statusCode);
 		const now= new Date();
-		const timeStamp= lib.timeCode(now);
 		if (lastHour != now.getHours()) { //log tstat json each hour
-			Log.write(`:tstat ${JSON.stringify(tstat.body)}`, timeStamp);
+			Log.write(`:tstat ${JSON.stringify(tstat.body)}`);
 			lastHour= now.getHours();
 		}
 		if (lastTemp != tstat.body.temp) {//temperature (degrees Fahrenheit)
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/temp`, tstat.body.temp +' F');
+			MQ.pub(`/tell/${cfg.loc}/CT50/temp`, tstat.body.temp +' F');
 			lastTemp= tstat.body.temp;
 		}
 		if (lastTmode != tstat.body.tmode) {//HVAC mode
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/tmode`, Tmode[tstat.body.tmode]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/tmode`, Tmode[tstat.body.tmode]);
 			lastTmode= tstat.body.tmode;
 		}
 		if (lastFmode != tstat.body.fmode) {//fan mode
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/fmode`, Fmode[tstat.body.fmode]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/fmode`, Fmode[tstat.body.fmode]);
 			lastFmode= tstat.body.fmode;
 		}
 		if (lastOverride != tstat.body.override) {//override
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/override`, Xmode[tstat.body.override]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/override`, Xmode[tstat.body.override]);
 			lastOverride= tstat.body.override;
 		}
 		if (lastHold != tstat.body.hold) {//hold
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/hold`, Xmode[tstat.body.hold]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/hold`, Xmode[tstat.body.hold]);
 			lastHold= tstat.body.hold;
 		}
 		if (lastTstat != tstat.body.tstate) {//HVAC Operating State
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/mode`, Tmode[tstat.body.tstate]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/mode`, Tmode[tstat.body.tstate]);
 			lastTstat= tstat.body.tstate;
 		}
 		if (lastFstat != tstat.body.fstate) {//Fan Operating State
-			MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/fan`, Smode[tstat.body.fstate]);
+			MQ.pub(`/tell/${cfg.loc}/CT50/fan`, Smode[tstat.body.fstate]);
 			lastFstat= tstat.body.fstate;
 		}
 		if (lastTcool != tstat.body.t_cool) {//target Cool setpoint (degrees Fahrenheit)
 			if (tstat.body.t_cool !== undefined)
-				MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/cool`, tstat.body.t_cool+' F');
+				MQ.pub(`/tell/${cfg.loc}/CT50/cool`, tstat.body.t_cool+' F');
 			lastTcool= tstat.body.t_cool; 
 		}
 		if (lastTheat != tstat.body.t_heat ) {//target Heat setpoint (degrees Fahrenheit)
 			if (tstat.body.t_heat !== undefined)
-				MQ.pub(timeStamp, `tell/${cfg.loc}/CT50/heat`, tstat.body.t_heat+' F');
+				MQ.pub(`/tell/${cfg.loc}/CT50/heat`, tstat.body.t_heat+' F');
 			lastTheat= tstat.body.t_heat; 
 		}
 	})
@@ -86,10 +86,9 @@ async function sysCT50() { //request thermostat system information (sys)
 		const model= await got.get(cfg.CT50Url+'/tstat/model', {responseType: 'text'});
 		const sysName= await got.get(cfg.CT50Url+'/sys/name', {responseType: 'text'});
 
-		const timeStamp= lib.timeCode(new Date());
-		const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.substr(1);
-		Log.write(`:sys ${response}`, timeStamp);
-		MQ.pub(timeStamp, `told/${cfg.loc}/CT50/sys`, response, 1, false);
+		const response= sysName.body.slice(0, -1) +',' +model.body.slice(1, -1) +',' +sys.body.slice(1);
+		Log.write(`:sys ${response}`);
+		MQ.pub(`/told/${cfg.loc}/CT50/sys`, response, 1, false);
 	} catch (err) {
 		console.log('Got sys Error: ', err.message);
 	}
@@ -102,19 +101,19 @@ function setCT50(prop, val) { //request to change property (set)
 		if (fmodeVal > -1 && fmodeVal < 3)
 			postCT50('tstat', `{ "fmode":${fmodeVal} }`);
 		else
-			MQ.pub(0, `sat/${cfg.loc}/CT50`, `ERR: setCT50 ${prop} ${val}`,1,false);
+			MQ.pub(`/sat/${cfg.loc}/CT50`, `ERR: setCT50 ${prop} ${val}`,1,false);
 	} else if (prop == 'tmode') { //HVAC mode
 		const tmodeVal= Tmode.indexOf(val);
 		if (tmodeVal > -1 && tmodeVal < 4)
 			postCT50('tstat', `{ "tmode":${tmodeVal} }`);
 		else
-			MQ.pub(0, `sat/${cfg.loc}/CT50`, `ERR: setCT50 ${prop} ${val}`,1,false);
+			MQ.pub(`/sat/${cfg.loc}/CT50`, `ERR: setCT50 ${prop} ${val}`,1,false);
 	} else if (prop == 'cool') { //target Cool setpoint (degrees Fahrenheit)
 		postCT50('tstat', `{ "t_cool":${val} }`)
 	} else if (prop == 'heat') { //target Heat setpoint (degrees Fahrenheit)
 		postCT50('tstat', `{ "t_heat":${val} }`)
 	} else
-		MQ.pub(0, `sat/${cfg.loc}/CT50`, `Unknown: ${prop}~${val}`,1,false);
+		MQ.pub(`/sat/${cfg.loc}/CT50`, `Unknown: ${prop}~${val}`,1,false);
 }
 
 async function postCT50(url, data) {
@@ -124,16 +123,15 @@ async function postCT50(url, data) {
 		method: 'post',
 		timeout: 300 //ms
 	})
-	MQ.pub(0, `sat/${cfg.loc}/CT50`, `Status: ${response.statusCode} ${data}`,1,false);
+	MQ.pub(`/sat/${cfg.loc}/CT50`, `Status: ${response.statusCode} ${data}`,1,false);
 	pollCT50(); //read changed value(s)
 }
 
 function netCT50() { //request thermostat network information (net)
 	got.get(cfg.CT50Url+'/sys/network', {responseType: 'text'})
 	.then(net => {
-		const timeStamp= lib.timeCode(new Date());
-		Log.write(`:net ${net.body}`, timeStamp);
-		MQ.pub(timeStamp, `told/${cfg.loc}/CT50/net`, net.body, 1, false);
+		Log.write(`:net ${net.body}`);
+		MQ.pub(`/told/${cfg.loc}/CT50/net`, net.body, 1, false);
 	})
 	.catch(err => {
 		console.log('Got net Error: ', err.message);
@@ -141,10 +139,10 @@ function netCT50() { //request thermostat network information (net)
 }
 
 // open mqtt connection
-const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID);
+const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID, Log.write);
 
 MQ.client.on('connect', () => {	
-	MQ.pub(0, 'conn', 'ready');
+	MQ.pub('/conn', 'ready');
 	pollCT50();
 	setInterval(pollCT50, MINUTE);
 });
@@ -154,11 +152,13 @@ MQ.client.subscribe(cfg.clientID +'/set/#',{qos:1});
 
 MQ.client.on('message',(topic, payload) => {
 //	console.log(topic, payload.toString());
-	if (topic == cfg.clientID +'/get/dev') MQ.pub(0, 'told/dev', cfg.loc +'/CT50',1,false);
-	else if (topic == cfg.clientID +'/get/loc') MQ.pub(0, 'told/loc', os.hostname(),1,false);
-	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/var`) MQ.pub(0, `told/${cfg.loc}/CT50/var`, 'temp,tmode,fmode,override,hold,tstate,fstate,t_cool,t_heat;sys,net;tmode,fmode,heat,cool',1,false);
+	if (topic == cfg.clientID +'/get/dev') MQ.pub('/told/dev', cfg.loc +'/CT50',1,false);
+	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2),1,false);
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname(),1,false);
+	else if (topic == cfg.clientID +'/get/poll') pollCT50();
+	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/var`) MQ.pub(`/told/${cfg.loc}/CT50/var`, 'temp,tmode,fmode,override,hold,tstate,fstate,t_cool,t_heat;sys,net;tmode,fmode,heat,cool',1,false);
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/sys`) sysCT50();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/net`) netCT50();
-	else if (topic.substr(0, 18) == `${cfg.clientID}/set/${cfg.loc}/CT50/`) setCT50(topic.substr(18), payload.toString());
+	else if (topic.slice(0, 18) == `${cfg.clientID}/set/${cfg.loc}/CT50/`) setCT50(topic.slice(18), payload.toString());
 	else Log.write(`# Unknown message: ${topic} ${payload}`);
 });
