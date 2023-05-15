@@ -44,19 +44,18 @@ function doSpeedTest() {
 
 // open mqtt connection
 const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID, Log.write);
-
 MQ.client.on('connect', () => {	
 	MQ.pub('/conn', 'ready');
+	Log.write(`: ${cfg.clientID} connected to MQTT broker`);
+	MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
 	doSpeedTest();
 	setInterval(doSpeedTest, TWENTY_MINUTES);
 })
 
-MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
-
 MQ.client.on('message',(topic, message) => {
 	if (topic == cfg.clientID +'/get/dev') MQ.pub('/told/dev', cfg.loc +'/isptst',1,false);
-	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2),1,false);
-	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname(),1,false);
+	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2)+' days',1,false );
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname() +'; ' +os.platform() +'; ' +os.release() +'; ' +(os.uptime() /24 /3600).toFixed(2) +' os days; ' +((Date.now() -startTime) /24 /3600000).toFixed(2)+' app days',1,false);
 	else if (topic == cfg.clientID +'/get/test') doSpeedTest();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/isptst/var`) MQ.pub(`/told/${cfg.loc}/isptst/var`, 'ping,upload,dnload',1,false);
 	else Log.write(`# Unknown message: ${topic} ${payload}`);

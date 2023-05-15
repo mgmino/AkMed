@@ -3,8 +3,8 @@
 
 const SerialPort= require('serialport');	//npmjs.com/package/serialport
 const ByteLength= require('@serialport/parser-byte-length');
-const os = require('os');
-const cfg = require('./config_ada');
+const os = require('node:os');
+const cfg = require('./inc/config_ada');
 const lib = require('./mqtt-client-lib');
 
 const Log= new lib.Logger(cfg.logFile); //open log file
@@ -25,25 +25,25 @@ SerialPort.list().then(ports => {
 
 // create and open serial port
 const chan= new SerialPort('/dev/ttyUSB1', { baudRate: 4800, dataBits: 7, parity: 'odd', stopBits: 2 }, (err) => {
-    if (err) {
-      console.log('Adatek error on open: ', err.message);
-	  process.exit();
-    }
-  });
+	if (err) {
+		Log.write('# Adatek error on open: ' +err.message);
+		throw err;
+	}
+});
 const parser= chan.pipe(new ByteLength({length: 1}))
 
 chan.on('open', () => {
-  console.log(`Adatek: open ${chan.path} @ ${chan.baudRate} baud, 7 bits, parity: odd`);
+	Log.write(`: open ${chan.path} @ ${chan.baudRate} baud, 7 bits, parity: odd`);
 });
 
 chan.on('close', () => {
-  console.log('Adatek: serial port closed');
+	console.log('Adatek: serial port closed');
 });
 
 // Write serial data
 function sendSerial(chars) {
 	chan.write(chars, (err) => {
-		if (err) return console.log('Adatek error on serial write: ', err.message);
+		if (err) Log.write('# Adatek error on serial write: ', err.message);
 	});
 }
 
@@ -73,7 +73,7 @@ parser.on('data', char => {
 				logEntry+= datum.charAt(0); //add Local/Remote type character
 				logEntry+= delta ? '*' : ''; //indicate input change
 				datum.substr(1).trim().split('  ').forEach(elem => logEntry+= '\t' +parseInt(elem).toString(16).padStart(2, '0')); //convert to hex for log
-				Log.write('', logEntry);
+				Log.write(logEntry);
 				if (delta) { //input change
 					inputChange(logEntry, idx);
 					lastInputs[idx]= currInputs;
@@ -94,7 +94,7 @@ function scanAdatek() {
 		const timeStamp= lib.timeCode();
 		const missedPolls= pollCount -rspCount; //# missed poll responses
 		if (missedPolls < 5 | !(missedPolls % 25)) //log initial faults and samples
-			Log.write(`#poll(${pollCount}) <> response(${rspCount})`);
+			Log.write(`# poll(${pollCount}) <> response(${rspCount})`);
 		if (!pollError) MQ.pub('/conn', 'alert'); //only report once
 		pollError= true;
 	} else if (pollError) { //poll response after previous error
@@ -159,19 +159,19 @@ function inputChange(logInfo, idx) {
 }
 
 // open mqtt connection
-const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID, Log.write);
-
+const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID, Log.write.bind(Log));
 MQ.client.on('connect', () => {	
 	MQ.pub('/conn', 'ready');
-	setInterval(scanAdatek, 1000);
+	Log.write(`: ${cfg.clientID} connected to MQTT broker`);
+	MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
+	setInterval(scanAdatek, 1000); //scan each second
 })
 
-MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
-
+// answer mqtt requests
 MQ.client.on('message',(topic, payload) => {
 	if (topic == cfg.clientID +'/get/dev') MQ.pub('/told/dev', 'mfd/gar/entryDor,mfd/gar/MgMdor,mfd/gar/LAMdor,mfd/ext/mailbox,mfd/hvac',1,false);
-	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2),1,false );
-	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname(),1,false);
+	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2)+' days',1,false );
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname() +'; ' +os.platform() +'; ' +os.release() +'; ' +(os.uptime() /24 /3600).toFixed(2) +' os days; ' +((Date.now() -startTime) /24 /3600000).toFixed(2)+' app days',1,false);
 //	else if (topic == cfg.clientID +'/get/mfd/gar/entryDor/var') MQ.pub('/told/${cfg.loc}/mfd/gar/entryDor/var', '??',1,false);
-	else Log.write(`# Unknown message: ${topic} ${payload}`);
+	else Log.write(`? Unknown message: ${topic} ${payload}`);
 });

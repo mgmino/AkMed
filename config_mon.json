@@ -1,4 +1,0 @@
-{
-    "mqttUrl":"mqtt://localhost",
-    "clientID":"mon"
-}

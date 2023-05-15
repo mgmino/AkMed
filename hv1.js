@@ -3,7 +3,7 @@
 
 const got = require('got'); //https://www.npmjs.com/package/got
 const os = require('node:os');
-const cfg = require('./config_hv1');
+const cfg = require('./inc/config_hv1');
 const lib = require('./mqtt-client-lib');
 
 const MINUTE = 60 * 1000; //60 * 1000ms
@@ -140,25 +140,25 @@ function netCT50() { //request thermostat network information (net)
 
 // open mqtt connection
 const MQ= new lib.MQtt(cfg.mqttUrl, cfg.clientID, Log.write);
-
 MQ.client.on('connect', () => {	
 	MQ.pub('/conn', 'ready');
+	Log.write(`: ${cfg.clientID} connected to MQTT broker`);
+	MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
+	MQ.client.subscribe(cfg.clientID +'/set/#',{qos:1});
 	pollCT50();
 	setInterval(pollCT50, MINUTE);
 });
 
-MQ.client.subscribe(cfg.clientID +'/get/#',{qos:1});
-MQ.client.subscribe(cfg.clientID +'/set/#',{qos:1});
-
+// answer mqtt requests
 MQ.client.on('message',(topic, payload) => {
 //	console.log(topic, payload.toString());
 	if (topic == cfg.clientID +'/get/dev') MQ.pub('/told/dev', cfg.loc +'/CT50',1,false);
-	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2),1,false);
-	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname(),1,false);
+	else if (topic == cfg.clientID +'/get/uptime') MQ.pub('/told/uptime', ((Date.now() -startTime) /24 /3600000).toFixed(2)+' days',1,false );
+	else if (topic == cfg.clientID +'/get/loc') MQ.pub('/told/loc', os.hostname() +'; ' +os.platform() +'; ' +os.release() +'; ' +(os.uptime() /24 /3600).toFixed(2) +' os days; ' +((Date.now() -startTime) /24 /3600000).toFixed(2)+' app days',1,false);
 	else if (topic == cfg.clientID +'/get/poll') pollCT50();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/var`) MQ.pub(`/told/${cfg.loc}/CT50/var`, 'temp,tmode,fmode,override,hold,tstate,fstate,t_cool,t_heat;sys,net;tmode,fmode,heat,cool',1,false);
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/sys`) sysCT50();
 	else if (topic == `${cfg.clientID}/get/${cfg.loc}/CT50/net`) netCT50();
 	else if (topic.slice(0, 18) == `${cfg.clientID}/set/${cfg.loc}/CT50/`) setCT50(topic.slice(18), payload.toString());
-	else Log.write(`# Unknown message: ${topic} ${payload}`);
+	else Log.write(`? Unknown message: ${topic} ${payload}`);
 });

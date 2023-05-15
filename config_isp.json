@@ -1,6 +1,0 @@
-{
-    "mqttUrl":"mqtt://localhost",
-    "logFile":"/var/akmed/logs/l0g-isp",
-    "clientID":"isp",
-    "loc":"mfd"
-}
